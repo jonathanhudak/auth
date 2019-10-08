@@ -1,10 +1,14 @@
 import babel from 'rollup-plugin-babel';
+import peerDepsExternal from 'rollup-plugin-peer-deps-external';
 
 export default {
   input: 'src/index.js',
   output: {
     file: 'index.js',
-    format: 'cjs'
+    format: 'esm'
   },
-  plugins: [babel()]
+  plugins: [
+    peerDepsExternal({ includeDependencies: true }),
+    babel({ runtimeHelpers: true })
+  ]
 };

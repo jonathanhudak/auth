@@ -1,13 +1,18 @@
-import ReactDOM from "react-dom";
-import React from "react";
-import MyComponent from ".";
+import ReactDOM from 'react-dom';
+import React from 'react';
+import { Account, AccountProvider, Logout } from '.';
 
 function App() {
   return (
     <div>
-      <MyComponent />
+      <AccountProvider>
+        <Account>
+          <h1>Authorized content</h1>
+          <Logout />
+        </Account>
+      </AccountProvider>
     </div>
   );
 }
 
-ReactDOM.render(<App />, root);
+ReactDOM.render(<App />, document.getElementById('root'));
