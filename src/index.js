@@ -1,37 +1,39 @@
 import React, { useContext, useCallback, useState } from 'react';
+import PropTypes from 'prop-types';
 import axios from 'axios';
 
 export const AccountContext = React.createContext();
 
-async function requestCreateNewAccount({ username, email, password }) {
+async function requestCreateNewAccount({
+  username,
+  email,
+  password,
+  handleError
+}) {
   const response = await axios
     .post(`${process.env.ENDPOINT}/auth/local/register`, {
       username,
       email,
       password
     })
-    .catch(error => {
-      // Handle error.
-      console.log('An error occurred:', error);
-    });
+    .catch(handleError);
   return response && response.data;
 }
 
-async function requestAccountLogin({ identifier, password, token }) {
-  const response = await axios
-    .post(`${process.env.ENDPOINT}/auth/local`, {
+async function requestAccountLogin({ identifier, password, handleError }) {
+  try {
+    const response = await axios.post(`${process.env.ENDPOINT}/auth/local`, {
       identifier,
       password
-    })
-    .catch(error => {
-      // Handle error.
-      console.log('An error occurred:', error);
     });
-  if (response) {
-    sessionStorage.setItem('token', response.data.jwt);
-    return response.data;
+    if (response) {
+      sessionStorage.setItem('token', response.data.jwt);
+      return response.data;
+    }
+    return null;
+  } catch (e) {
+    handleError(e.response.data);
   }
-  return null;
 }
 
 async function requestAccount(token) {
@@ -43,7 +45,7 @@ async function requestAccount(token) {
     })
     .catch(error => {
       // Handle error.
-      console.log('An error occurred:', error);
+      return error;
     });
   return account.data;
 }
@@ -55,41 +57,58 @@ export function useAccount() {
   const logout = useCallback(() => {
     sessionStorage.removeItem('token');
     setAccount(null);
-    window.location.reload();
   }, [setAccount]);
+
+  const clearError = useCallback(() => {
+    setAccount({ ...account, error: null });
+  }, [account, setAccount]);
 
   const getAccount = useCallback(() => {
     async function request() {
       const data = await requestAccount(token);
-      setAccount(data);
+      if (data) {
+        setAccount({ ...account, jwt: token, user: data });
+      }
     }
     request();
-  }, [setAccount, token]);
+  }, [account, setAccount, token]);
 
-  if (!account && token) {
+  if (token && !account) {
     getAccount();
   }
 
   const createNewAccount = useCallback(
     options => {
+      clearError();
       async function createAccount(options) {
-        const data = await requestCreateNewAccount(options);
-        setAccount(data);
+        const data = await requestCreateNewAccount({
+          ...options,
+          handleError: error => setAccount({ ...account, error })
+        });
+        if (data) {
+          setAccount(data);
+        }
       }
       createAccount(options);
     },
-    [setAccount]
+    [account, clearError, setAccount]
   );
 
   const login = useCallback(
     options => {
+      clearError();
       async function attemptLogin(options) {
-        const data = await requestAccountLogin(options);
-        setAccount(data);
+        const data = await requestAccountLogin({
+          ...options,
+          handleError: error => setAccount({ ...account, error })
+        });
+        if (data) {
+          setAccount(data);
+        }
       }
       attemptLogin(options);
     },
-    [setAccount]
+    [account, clearError, setAccount]
   );
 
   return {
@@ -97,7 +116,7 @@ export function useAccount() {
     createNewAccount,
     login,
     logout,
-    isLoggedIn: !!account
+    isLoggedIn: account && !!account.user && !!account.jwt
   };
 }
 
@@ -115,7 +134,12 @@ export function AccountProvider({ children }) {
   );
 }
 
-function CreateAccount() {
+function CreateAccount({
+  Form = 'form',
+  Input = 'input',
+  Label = 'label',
+  Button = 'button'
+}) {
   const { createNewAccount } = useAccount();
   const [accountData, setAccount] = useState({
     username: 'jmhudak',
@@ -127,10 +151,10 @@ function CreateAccount() {
     createNewAccount(accountData);
   }
   return (
-    <form onSubmit={create}>
-      <label>
+    <Form onSubmit={create}>
+      <Label>
         username
-        <input
+        <Input
           type="text"
           name="username"
           value={accountData.username}
@@ -138,10 +162,10 @@ function CreateAccount() {
             setAccount({ ...accountData, username: target.value })
           }
         />
-      </label>
-      <label>
+      </Label>
+      <Label>
         email
-        <input
+        <Input
           type="text"
           name="email"
           value={accountData.email}
@@ -149,8 +173,8 @@ function CreateAccount() {
             setAccount({ ...accountData, email: target.value })
           }
         />
-      </label>
-      <label>
+      </Label>
+      <Label>
         password
         <input
           type="password"
@@ -160,14 +184,27 @@ function CreateAccount() {
             setAccount({ ...accountData, password: target.value })
           }
         />
-      </label>
-      <button type="submit">Create</button>
-    </form>
+      </Label>
+      <Button type="submit">Create new account</Button>
+    </Form>
   );
 }
 
-function Login() {
+CreateAccount.propTypes = {
+  Form: PropTypes.elementType,
+  Label: PropTypes.elementType,
+  Input: PropTypes.elementType,
+  Button: PropTypes.elementType
+};
+
+function Login({
+  Form = 'form',
+  Label = 'label',
+  Input = 'input',
+  Button = 'button'
+}) {
   const { login } = useAccount();
+
   const [accountData, setAccount] = useState({
     identifier: 'jmhudak@amazon.com',
     password: ''
@@ -177,10 +214,10 @@ function Login() {
     login(accountData);
   }
   return (
-    <form onSubmit={create}>
-      <label>
+    <Form onSubmit={create}>
+      <Label>
         email or username
-        <input
+        <Input
           autoComplete="identifier"
           type="text"
           name="identifier"
@@ -189,8 +226,8 @@ function Login() {
             setAccount({ ...accountData, identifier: target.value })
           }
         />
-      </label>
-      <label>
+      </Label>
+      <Label>
         password
         <input
           autoComplete="password"
@@ -201,10 +238,26 @@ function Login() {
             setAccount({ ...accountData, password: target.value })
           }
         />
-      </label>
-      <button type="submit">Login</button>
-    </form>
+      </Label>
+      <Button type="submit">Login</Button>
+    </Form>
   );
+}
+
+Login.propTypes = {
+  Form: PropTypes.elementType,
+  Label: PropTypes.elementType,
+  Input: PropTypes.elementType,
+  Button: PropTypes.elementType
+};
+
+export function useAccountUI() {
+  const { isLoggedIn } = useAccount();
+  return {
+    isLoggedIn,
+    CreateAccount,
+    Login
+  };
 }
 
 export function Account({ children }) {
@@ -234,3 +287,7 @@ export function Account({ children }) {
     </div>
   );
 }
+
+Account.propTypes = {
+  children: PropTypes.node
+};

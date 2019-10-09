@@ -1,4 +1,5 @@
 import React, { useState, useContext, useCallback } from 'react';
+import PropTypes from 'prop-types';
 import axios from 'axios';
 
 const AccountContext = React.createContext();
@@ -6,38 +7,37 @@ const AccountContext = React.createContext();
 async function requestCreateNewAccount({
   username,
   email,
-  password
+  password,
+  handleError
 }) {
   const response = await axios.post(`${process.env.ENDPOINT}/auth/local/register`, {
     username,
     email,
     password
-  }).catch(error => {
-    // Handle error.
-    console.log('An error occurred:', error);
-  });
+  }).catch(handleError);
   return response && response.data;
 }
 
 async function requestAccountLogin({
   identifier,
   password,
-  token
+  handleError
 }) {
-  const response = await axios.post(`${process.env.ENDPOINT}/auth/local`, {
-    identifier,
-    password
-  }).catch(error => {
-    // Handle error.
-    console.log('An error occurred:', error);
-  });
+  try {
+    const response = await axios.post(`${process.env.ENDPOINT}/auth/local`, {
+      identifier,
+      password
+    });
 
-  if (response) {
-    sessionStorage.setItem('token', response.data.jwt);
-    return response.data;
+    if (response) {
+      sessionStorage.setItem('token', response.data.jwt);
+      return response.data;
+    }
+
+    return null;
+  } catch (e) {
+    handleError(e.response.data);
   }
-
-  return null;
 }
 
 async function requestAccount(token) {
@@ -47,7 +47,7 @@ async function requestAccount(token) {
     }
   }).catch(error => {
     // Handle error.
-    console.log('An error occurred:', error);
+    return error;
   });
   return account.data;
 }
@@ -58,43 +58,71 @@ function useAccount() {
   const logout = useCallback(() => {
     sessionStorage.removeItem('token');
     setAccount(null);
-    window.location.reload();
   }, [setAccount]);
+  const clearError = useCallback(() => {
+    setAccount({ ...account,
+      error: null
+    });
+  }, [account, setAccount]);
   const getAccount = useCallback(() => {
     async function request() {
       const data = await requestAccount(token);
-      setAccount(data);
+
+      if (data) {
+        setAccount({ ...account,
+          jwt: token,
+          user: data
+        });
+      }
     }
 
     request();
-  }, [setAccount, token]);
+  }, [account, setAccount, token]);
 
-  if (!account && token) {
+  if (token && !account) {
     getAccount();
   }
 
   const createNewAccount = useCallback(options => {
+    clearError();
+
     async function createAccount(options) {
-      const data = await requestCreateNewAccount(options);
-      setAccount(data);
+      const data = await requestCreateNewAccount({ ...options,
+        handleError: error => setAccount({ ...account,
+          error
+        })
+      });
+
+      if (data) {
+        setAccount(data);
+      }
     }
 
     createAccount(options);
-  }, [setAccount]);
+  }, [account, clearError, setAccount]);
   const login = useCallback(options => {
+    clearError();
+
     async function attemptLogin(options) {
-      const data = await requestAccountLogin(options);
-      setAccount(data);
+      const data = await requestAccountLogin({ ...options,
+        handleError: error => setAccount({ ...account,
+          error
+        })
+      });
+
+      if (data) {
+        setAccount(data);
+      }
     }
 
     attemptLogin(options);
-  }, [setAccount]);
+  }, [account, clearError, setAccount]);
   return {
     account,
     createNewAccount,
     login,
     logout,
-    isLoggedIn: !!account
+    isLoggedIn: account && !!account.user && !!account.jwt
   };
 }
 function Logout() {
@@ -114,7 +142,12 @@ function AccountProvider({
   }, children);
 }
 
-function CreateAccount() {
+function CreateAccount({
+  Form = 'form',
+  Input = 'input',
+  Label = 'label',
+  Button = 'button'
+}) {
   const {
     createNewAccount
   } = useAccount();
@@ -129,9 +162,9 @@ function CreateAccount() {
     createNewAccount(accountData);
   }
 
-  return React.createElement("form", {
+  return React.createElement(Form, {
     onSubmit: create
-  }, React.createElement("label", null, "username", React.createElement("input", {
+  }, React.createElement(Label, null, "username", React.createElement(Input, {
     type: "text",
     name: "username",
     value: accountData.username,
@@ -140,7 +173,7 @@ function CreateAccount() {
     }) => setAccount({ ...accountData,
       username: target.value
     })
-  })), React.createElement("label", null, "email", React.createElement("input", {
+  })), React.createElement(Label, null, "email", React.createElement(Input, {
     type: "text",
     name: "email",
     value: accountData.email,
@@ -149,7 +182,7 @@ function CreateAccount() {
     }) => setAccount({ ...accountData,
       email: target.value
     })
-  })), React.createElement("label", null, "password", React.createElement("input", {
+  })), React.createElement(Label, null, "password", React.createElement("input", {
     type: "password",
     name: "password",
     value: accountData.password,
@@ -158,12 +191,24 @@ function CreateAccount() {
     }) => setAccount({ ...accountData,
       password: target.value
     })
-  })), React.createElement("button", {
+  })), React.createElement(Button, {
     type: "submit"
-  }, "Create"));
+  }, "Create new account"));
 }
 
-function Login() {
+CreateAccount.propTypes = {
+  Form: PropTypes.elementType,
+  Label: PropTypes.elementType,
+  Input: PropTypes.elementType,
+  Button: PropTypes.elementType
+};
+
+function Login({
+  Form = 'form',
+  Label = 'label',
+  Input = 'input',
+  Button = 'button'
+}) {
   const {
     login
   } = useAccount();
@@ -177,9 +222,9 @@ function Login() {
     login(accountData);
   }
 
-  return React.createElement("form", {
+  return React.createElement(Form, {
     onSubmit: create
-  }, React.createElement("label", null, "email or username", React.createElement("input", {
+  }, React.createElement(Label, null, "email or username", React.createElement(Input, {
     autoComplete: "identifier",
     type: "text",
     name: "identifier",
@@ -189,7 +234,7 @@ function Login() {
     }) => setAccount({ ...accountData,
       identifier: target.value
     })
-  })), React.createElement("label", null, "password", React.createElement("input", {
+  })), React.createElement(Label, null, "password", React.createElement("input", {
     autoComplete: "password",
     type: "password",
     name: "password",
@@ -199,11 +244,27 @@ function Login() {
     }) => setAccount({ ...accountData,
       password: target.value
     })
-  })), React.createElement("button", {
+  })), React.createElement(Button, {
     type: "submit"
   }, "Login"));
 }
 
+Login.propTypes = {
+  Form: PropTypes.elementType,
+  Label: PropTypes.elementType,
+  Input: PropTypes.elementType,
+  Button: PropTypes.elementType
+};
+function useAccountUI() {
+  const {
+    isLoggedIn
+  } = useAccount();
+  return {
+    isLoggedIn,
+    CreateAccount,
+    Login
+  };
+}
 function Account({
   children
 }) {
@@ -226,5 +287,8 @@ function Account({
     onClick: () => setState('register')
   }, "Register a new account"));
 }
+Account.propTypes = {
+  children: PropTypes.node
+};
 
-export { Account, AccountContext, AccountProvider, Logout, useAccount };
+export { Account, AccountContext, AccountProvider, Logout, useAccount, useAccountUI };
