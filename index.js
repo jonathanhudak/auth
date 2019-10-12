@@ -8,9 +8,11 @@ async function requestCreateNewAccount({
   username,
   email,
   password,
-  handleError
+  handleError,
+  endpoint
 }) {
-  const response = await axios.post(`${process.env.ENDPOINT}/auth/local/register`, {
+  if (!endpoint) return null;
+  const response = await axios.post(`${endpoint}/auth/local/register`, {
     username,
     email,
     password
@@ -21,10 +23,13 @@ async function requestCreateNewAccount({
 async function requestAccountLogin({
   identifier,
   password,
-  handleError
+  handleError,
+  endpoint
 }) {
+  if (!endpoint) return null;
+
   try {
-    const response = await axios.post(`${process.env.ENDPOINT}/auth/local`, {
+    const response = await axios.post(`${endpoint}/auth/local`, {
       identifier,
       password
     });
@@ -40,8 +45,9 @@ async function requestAccountLogin({
   }
 }
 
-async function requestAccount(token) {
-  const account = await axios.get(`${process.env.ENDPOINT}/users/me`, {
+async function requestAccount(token, endpoint) {
+  if (!endpoint) return null;
+  const account = await axios.get(`${endpoint}/users/me`, {
     headers: {
       Authorization: `Bearer ${token}`
     }
@@ -54,19 +60,25 @@ async function requestAccount(token) {
 
 function useAccount() {
   const [token] = useState(() => sessionStorage.getItem('token'));
-  const [account, setAccount] = useContext(AccountContext);
-  const logout = useCallback(() => {
+  const [loggingOut, setLoggingOut] = useState(false);
+  const [account, setAccount, endpoint] = useContext(AccountContext);
+  const logout = useCallback(callback => {
     sessionStorage.removeItem('token');
-    setAccount(null);
-  }, [setAccount]);
+    setLoggingOut(true);
+    setAccount({
+      endpoint
+    });
+    callback();
+  }, [endpoint, setAccount]);
   const clearError = useCallback(() => {
     setAccount({ ...account,
-      error: null
+      error: null,
+      endpoint
     });
-  }, [account, setAccount]);
+  }, [account, endpoint, setAccount]);
   const getAccount = useCallback(() => {
     async function request() {
-      const data = await requestAccount(token);
+      const data = await requestAccount(token, endpoint);
 
       if (data) {
         setAccount({ ...account,
@@ -76,10 +88,12 @@ function useAccount() {
       }
     }
 
-    request();
-  }, [account, setAccount, token]);
+    if (!loggingOut) {
+      request();
+    }
+  }, [account, endpoint, setAccount, token, loggingOut]);
 
-  if (token && !account) {
+  if (token && !account.user) {
     getAccount();
   }
 
@@ -90,16 +104,19 @@ function useAccount() {
       const data = await requestCreateNewAccount({ ...options,
         handleError: error => setAccount({ ...account,
           error
-        })
+        }),
+        endpoint
       });
 
       if (data) {
-        setAccount(data);
+        setAccount({
+          user: data
+        });
       }
     }
 
     createAccount(options);
-  }, [account, clearError, setAccount]);
+  }, [account, clearError, setAccount, endpoint]);
   const login = useCallback(options => {
     clearError();
 
@@ -107,7 +124,8 @@ function useAccount() {
       const data = await requestAccountLogin({ ...options,
         handleError: error => setAccount({ ...account,
           error
-        })
+        }),
+        endpoint
       });
 
       if (data) {
@@ -116,7 +134,7 @@ function useAccount() {
     }
 
     attemptLogin(options);
-  }, [account, clearError, setAccount]);
+  }, [account, clearError, endpoint, setAccount]);
   return {
     account,
     createNewAccount,
@@ -134,14 +152,16 @@ function Logout() {
   }, "Logout");
 }
 function AccountProvider({
-  children
+  children,
+  endpoint
 }) {
-  const [account, setAccount] = useState(null);
+  const [account, setAccount] = useState({
+    endpoint: endpoint || process.env.ENDPOINT
+  });
   return React.createElement(AccountContext.Provider, {
-    value: [account, setAccount]
+    value: [account, setAccount, endpoint]
   }, children);
 }
-
 function CreateAccount({
   Form = 'form',
   Input = 'input',
@@ -195,19 +215,18 @@ function CreateAccount({
     type: "submit"
   }, "Create new account"));
 }
-
 CreateAccount.propTypes = {
   Form: PropTypes.elementType,
   Label: PropTypes.elementType,
   Input: PropTypes.elementType,
   Button: PropTypes.elementType
 };
-
 function Login({
   Form = 'form',
   Label = 'label',
   Input = 'input',
-  Button = 'button'
+  Button = 'button',
+  onLogin = () => {}
 }) {
   const {
     login
@@ -217,14 +236,15 @@ function Login({
     password: ''
   });
 
-  function create(e) {
+  function submitLogin(e) {
     e.preventDefault();
     login(accountData);
+    onLogin();
   }
 
   return React.createElement(Form, {
-    onSubmit: create
-  }, React.createElement(Label, null, "email or username", React.createElement(Input, {
+    onSubmit: submitLogin
+  }, React.createElement(Label, null, React.createElement("span", null, "email or username"), React.createElement(Input, {
     autoComplete: "identifier",
     type: "text",
     name: "identifier",
@@ -234,7 +254,7 @@ function Login({
     }) => setAccount({ ...accountData,
       identifier: target.value
     })
-  })), React.createElement(Label, null, "password", React.createElement("input", {
+  })), React.createElement(Label, null, "password", React.createElement(Input, {
     autoComplete: "password",
     type: "password",
     name: "password",
@@ -248,12 +268,12 @@ function Login({
     type: "submit"
   }, "Login"));
 }
-
 Login.propTypes = {
   Form: PropTypes.elementType,
   Label: PropTypes.elementType,
   Input: PropTypes.elementType,
-  Button: PropTypes.elementType
+  Button: PropTypes.elementType,
+  onLogin: PropTypes.func
 };
 function useAccountUI() {
   const {
@@ -291,4 +311,4 @@ Account.propTypes = {
   children: PropTypes.node
 };
 
-export { Account, AccountContext, AccountProvider, Logout, useAccount, useAccountUI };
+export { Account, AccountContext, AccountProvider, CreateAccount, Login, Logout, useAccount, useAccountUI };
